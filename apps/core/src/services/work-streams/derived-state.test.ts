@@ -181,7 +181,9 @@ describe('work-stream derived state', () => {
     expect(result.openWaits[0]!.type).toBe('manual')
     expect(selectWorkStreamPresentationState(json)).toBe('delivery_approval')
     expect(workStreamNeedsHumanAttention(json)).toBe(true)
-    expect(buildWorkInterestSnapshot([json]).liveActivity.needsYouCount).toBe(1)
+    // Counted for a user who may act on every wait (the Live Activity counts per viewer).
+    const actsOnAll = { can: () => true, identity: { type: 'user', userId: 'user-1' } }
+    expect(buildWorkInterestSnapshot([json], { viewerFor: () => actsOnAll }).liveActivity.needsYouCount).toBe(1)
   })
 
   it('batch-loads active flow delivery independently of callers selecting metadata', async () => {
@@ -298,7 +300,8 @@ describe('work-stream derived state', () => {
       if (row.state === 'in_progress') expect(json.derivedState).toBe('in_progress')
       expect(selectWorkStreamPresentationState(json)).toBe(row.state)
       expect(workStreamNeedsHumanAttention(json)).toBe(row.attention)
-      const snapshot = buildWorkInterestSnapshot([json])
+      const actsOnAll = { can: () => true, identity: { type: 'user', userId: 'user-1' } }
+      const snapshot = buildWorkInterestSnapshot([json], { viewerFor: () => actsOnAll })
       expect(snapshot.top[0]?.bucket).toBe(row.bucket)
       expect(snapshot.liveActivity.top[0]?.bucket).toBe(row.bucket)
       expect(snapshot.liveActivity.needsYouCount).toBe(row.attention ? 1 : 0)

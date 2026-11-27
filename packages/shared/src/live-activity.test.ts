@@ -9,6 +9,7 @@ import {
   shouldShowLiveActivity,
   workBucket,
 } from './live-activity'
+import { workStreamWaitsOnViewer, type WorkStreamViewer } from './work-stream-time'
 
 function stream(overrides: Partial<WorkStream> = {}): WorkStream {
   return {
@@ -29,6 +30,10 @@ function stream(overrides: Partial<WorkStream> = {}): WorkStream {
 }
 
 const wait = (type: string) => [{ id: 'w-1', type, message: 'secret' }] as WorkStream['openWaits']
+
+// A user who may act on every wait: the count then equals the streams needing a person.
+const actsOnAll: WorkStreamViewer = { can: () => true, identity: { type: 'user', userId: 'user-1' } }
+const you = { viewerFor: () => actsOnAll }
 
 // This table is the contract with `bucket(for:)` in targets/widget/FicusWorkWidget.swift. If Swift's
 // rules change, these cases must change with them or the Live Activity and the widget will
@@ -71,12 +76,15 @@ describe('workBucket mirrors the widget’s Swift case table', () => {
 
 describe('buildLiveActivityState', () => {
   test('counts running and needs-you separately so the two never double-count', () => {
-    const state = buildLiveActivityState([
-      stream({ id: 'a', status: 'active' }),
-      stream({ id: 'b', status: 'active' }),
-      stream({ id: 'c', openWaits: wait('review') }),
-      stream({ id: 'd', status: 'queued', derivedState: undefined }),
-    ])
+    const state = buildLiveActivityState(
+      [
+        stream({ id: 'a', status: 'active' }),
+        stream({ id: 'b', status: 'active' }),
+        stream({ id: 'c', openWaits: wait('review') }),
+        stream({ id: 'd', status: 'queued', derivedState: undefined }),
+      ],
+      you
+    )
     expect(state.activeCount).toBe(2)
     expect(state.needsYouCount).toBe(1)
   })
@@ -114,7 +122,7 @@ describe('buildWorkInterestSnapshot', () => {
       openWaits: wait('review'),
     })
 
-    const snapshot = buildWorkInterestSnapshot(many, new Date('2026-08-30T00:00:00Z'))
+    const snapshot = buildWorkInterestSnapshot(many, { now: new Date('2026-08-30T00:00:00Z'), ...you })
     expect(snapshot.totalCount).toBe(30)
     expect(snapshot.bucketCounts).toEqual({
       needsYou: 1,
@@ -203,12 +211,15 @@ describe('manual wait actors in native projections', () => {
     ] as WorkStream['openWaits']
 
   test('only human (or actor-less) manual waits count as needs-you; owner waits are external waits', () => {
-    const snapshot = buildWorkInterestSnapshot([
-      stream({ id: 'human', openWaits: manual('human'), derivedState: 'blocked' }),
-      stream({ id: 'legacy', openWaits: manual(), derivedState: 'blocked' }),
-      stream({ id: 'owner', openWaits: manual('owner'), derivedState: 'blocked' }),
-      stream({ id: 'unknown', openWaits: manual('robot'), derivedState: 'blocked' }),
-    ])
+    const snapshot = buildWorkInterestSnapshot(
+      [
+        stream({ id: 'human', openWaits: manual('human'), derivedState: 'blocked' }),
+        stream({ id: 'legacy', openWaits: manual(), derivedState: 'blocked' }),
+        stream({ id: 'owner', openWaits: manual('owner'), derivedState: 'blocked' }),
+        stream({ id: 'unknown', openWaits: manual('robot'), derivedState: 'blocked' }),
+      ],
+      you
+    )
     expect(snapshot.bucketCounts).toMatchObject({ needsYou: 3, externalWait: 1, blocked: 0 })
     expect(snapshot.liveActivity.needsYouCount).toBe(3)
     expect(Object.fromEntries(snapshot.top.map((row) => [row.id, row.bucket]))).toEqual({
@@ -272,13 +283,16 @@ test('delivery label reasons survive widget JSON while aggregate vocabulary and 
 
 test('running delivery human actions remain counted without replacing the running bucket', () => {
   for (const kind of ['approval', 'review', 'merge'] as const) {
-    const snapshot = buildWorkInterestSnapshot([
-      stream({
-        derivedState: 'in_progress',
-        openWaits: [],
-        delivery: { kind },
-      }),
-    ])
+    const snapshot = buildWorkInterestSnapshot(
+      [
+        stream({
+          derivedState: 'in_progress',
+          openWaits: [],
+          delivery: { kind },
+        }),
+      ],
+      you
+    )
     expect(snapshot.top[0]?.bucket).toBe('running')
     expect(snapshot.top[0]?.delivery).toEqual({ kind })
     expect(snapshot.liveActivity.activeCount).toBe(1)
@@ -286,4 +300,55 @@ test('running delivery human actions remain counted without replacing the runnin
     expect(snapshot.bucketCounts.running).toBe(1)
     expect(snapshot.bucketCounts.needsYou).toBe(0)
   }
+})
+
+describe('the Live Activity "waiting on you" count follows the viewer rule', () => {
+  const viewer = (permissions: string[], userId: string): WorkStreamViewer => ({
+    can: (permission) => permissions.includes(permission),
+    identity: { type: 'user', userId },
+  })
+  const gate = {
+    id: 'gate',
+    type: 'manual',
+    workflowHumanGate: true,
+    flowAttemptId: 2,
+    resolutionHandler: 'workflow',
+    workflowGateApprover: 'assigned-reviewers',
+  } as NonNullable<WorkStream['openWaits']>[number]
+  const question = { id: 'q', type: 'question', referenceId: 'q' } as NonNullable<WorkStream['openWaits']>[number]
+  const streams = [
+    stream({ id: 'gated', derivedState: 'in_review', openWaits: [gate], assignedReviewerIds: ['reviewer'] }),
+    stream({ id: 'asking', derivedState: 'waiting_on_answer', openWaits: [question] }),
+    stream({ id: 'merge', derivedState: 'in_review', openWaits: [question], delivery: { kind: 'merge' } }),
+  ]
+  const countFor = (who: WorkStreamViewer | undefined) =>
+    buildLiveActivityState(streams, { viewerFor: () => who }).needsYouCount
+  const activityCountFor = (who: WorkStreamViewer | undefined) =>
+    streams.filter((ws) => workStreamWaitsOnViewer(ws, who)).length
+
+  test('a reviewer outside the gate is not counted for it, only for the code-host merge', () => {
+    const outsider = viewer(['workstreams:review'], 'someone-else')
+    expect(countFor(outsider)).toBe(1)
+    expect(countFor(outsider)).toBe(activityCountFor(outsider))
+    // Every stream still needs some person, so the rows keep their needs-you bucket.
+    expect(buildLiveActivityState(streams, { viewerFor: () => outsider }).top.map((row) => row.bucket)).toEqual([
+      'needsYou',
+      'needsYou',
+      'needsYou',
+    ])
+  })
+
+  test('the assigned reviewer and an answerer are counted for what they can act on', () => {
+    const reviewer = viewer(['workstreams:review'], 'reviewer')
+    const answerer = viewer(['agents:run'], 'answerer')
+    expect(countFor(reviewer)).toBe(2)
+    expect(countFor(answerer)).toBe(2)
+    for (const who of [reviewer, answerer]) expect(countFor(who)).toBe(activityCountFor(who))
+  })
+
+  test('an unknown viewer (or none) is never waited on, and alone does not keep the card up', () => {
+    expect(countFor(undefined)).toBe(0)
+    expect(buildLiveActivityState(streams).needsYouCount).toBe(0)
+    expect(shouldShowLiveActivity(buildLiveActivityState([streams[0]!], { viewerFor: () => undefined }))).toBe(false)
+  })
 })
