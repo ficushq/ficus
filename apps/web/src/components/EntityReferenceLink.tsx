@@ -29,7 +29,7 @@ export function EntityReferenceLink({
   onOpenAgent?: (agent: Agent) => void
 }) {
   const client = useContext(QueryClientContext)
-  const button = useRef<HTMLButtonElement>(null)
+  const button = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   // Hover opens the preview after 250ms, keyboard focus at once; leaving both it and the card closes it.
@@ -63,9 +63,10 @@ export function EntityReferenceLink({
 
   return (
     <>
-      <button
+      <span
         ref={button}
-        type="button"
+        role="button"
+        tabIndex={0}
         aria-busy={loading}
         // Shift- or Alt/Option-click opens a referenced agent in a floating window instead.
         {...agentChatTarget(reference.kind === 'agent' ? reference.id : undefined)}
@@ -73,7 +74,7 @@ export function EntityReferenceLink({
         aria-expanded={client ? preview && !open : undefined}
         aria-controls={preview && client ? previewId : undefined}
         className={clsx(
-          'ficus-button ficus-button-link inline underline underline-offset-2',
+          'ficus-button ficus-button-link inline wrap-anywhere underline underline-offset-2',
           loading && 'motion-safe:animate-pulse motion-reduce:opacity-60'
         )}
         onMouseEnter={() => {
@@ -87,6 +88,20 @@ export function EntityReferenceLink({
         }}
         onBlur={hover.anchorHandlers.onBlur}
         onTouchStart={preload}
+        // Native buttons are atomic even with display: inline. Keep this trigger in the
+        // paragraph's line boxes and mirror native Enter and Space activation.
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            if (event.key === 'Enter' && !event.repeat) event.currentTarget.click()
+          }
+        }}
+        onKeyUp={(event) => {
+          if (event.key === ' ') {
+            event.preventDefault()
+            event.currentTarget.click()
+          }
+        }}
         onClick={() => {
           dismiss()
           if (open) return
@@ -95,7 +110,7 @@ export function EntityReferenceLink({
         }}
       >
         {children}
-      </button>
+      </span>
       {previewMounted && client && (
         <Suspense fallback={null}>
           <EntityReferencePreview

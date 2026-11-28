@@ -35,7 +35,7 @@ test('reference hover preloads before clicking, and pending/error states keep th
         </QueryClientProvider>
       )
     )
-    const link = dom.window.document.querySelector('button')!
+    const link = dom.window.document.querySelector<HTMLElement>('[role="button"]')!
     await dom.act(async () => {
       link.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
       await started
