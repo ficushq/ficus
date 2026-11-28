@@ -30,10 +30,10 @@ test('renders explicit work stream and agent references as in-place actions', ()
   for (const kind of ['ws', 'agent']) {
     expect(
       renderToStaticMarkup(<MarkdownContent>{`[Short](ficus:${kind}:${entityId.slice(0, 8)})`}</MarkdownContent>)
-    ).toContain('<button')
+    ).toContain('role="button"')
     const html = renderToStaticMarkup(<MarkdownContent>{`[Open item](ficus:${kind}:${entityId})`}</MarkdownContent>)
-    expect(html).toContain('<button')
-    expect(html).toContain('Open item</button>')
+    expect(html).toContain('role="button"')
+    expect(html).toContain('>Open item</span>')
     expect(html).not.toContain('href="ficus:')
   }
 })
@@ -47,13 +47,13 @@ test('does not activate malformed references or references in code and retains U
     `[Old](tau:ws:${entityId})`, // ficus-negative-test
   ]) {
     const html = renderToStaticMarkup(<MarkdownContent>{content}</MarkdownContent>)
-    expect(html).not.toContain('<button')
+    expect(html).not.toContain('role="button"')
     expect(html).not.toContain('href="javascript:')
     expect(html).not.toContain('href="ficus:')
   }
   expect(
     renderToStaticMarkup(<MarkdownContent>{`\`[Example](ficus:ws:${entityId})\``}</MarkdownContent>)
-  ).not.toContain('<button')
+  ).not.toContain('role="button"')
 })
 
 test('user-bubble markdown inherits the on-accent ink instead of fixed inverted prose colours', () => {

@@ -41,11 +41,6 @@ const ALLOWLIST: Array<{ path: string; contains: string; why: string }> = []
  */
 const NAVIGATING_BUTTONS: Array<{ path: string; contains: string; why: string }> = [
   {
-    path: 'components/EntityReferenceLink.tsx',
-    contains: 'inline underline',
-    why: 'An entity reference inside prose that opens the entity; padding would break the line of text.',
-  },
-  {
     path: 'components/MessageContent.tsx',
     contains: 'mt-2 inline-flex',
     why: 'View work stream: opens the work stream panel.',

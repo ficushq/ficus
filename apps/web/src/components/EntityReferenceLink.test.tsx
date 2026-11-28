@@ -107,7 +107,7 @@ async function fixture(reference: EntityReference, onOpenAgent?: (agent: import(
       </QueryClientProvider>
     )
   )
-  const button = container.querySelector('button')!
+  const button = container.querySelector<HTMLElement>('[role="button"]')!
   const hover = () =>
     dom.act(async () => button.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })))
   // A dismissed card stays mounted (inert) only for its exit animation.
@@ -346,7 +346,7 @@ test('opening another reference replaces the existing preview', async () => {
     expect(f.tooltip()?.getAttribute('aria-label')).toBe('Agent preview')
     await f.dom.act(async () =>
       f.container
-        .querySelectorAll('button')[1]!
+        .querySelectorAll<HTMLElement>('[role="button"]')[1]!
         .dispatchEvent(new f.dom.window.MouseEvent('mouseover', { bubbles: true }))
     )
     await f.advance(250)

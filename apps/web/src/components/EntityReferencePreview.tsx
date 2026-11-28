@@ -29,7 +29,7 @@ export function EntityReferencePreview({
   onOpenAgent,
 }: {
   reference: EntityReference
-  anchor: RefObject<HTMLButtonElement | null>
+  anchor: RefObject<HTMLSpanElement | null>
   id: string
   hover: HoverCardState
   open: boolean

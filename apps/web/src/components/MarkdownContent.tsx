@@ -85,12 +85,8 @@ function AttachmentOrRemoteLink({ children, ...props }: ComponentProps<'a'>) {
 
   if ((props as Record<string, unknown>)['data-agent-file-id']) {
     return (
-      <a
-        {...props}
-        className="not-prose inline-flex items-center rounded border border-th-border px-2 py-1 text-sm"
-        download
-      >
-        <FileIcon className="mr-1 h-4 w-4" />
+      <a {...props} className="inline wrap-anywhere underline underline-offset-2" download>
+        <FileIcon className="mr-1 inline-block h-[1em] w-[1em] align-text-bottom" />
         {children}
       </a>
     )

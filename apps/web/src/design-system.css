@@ -713,7 +713,7 @@
     --tw-prose-td-borders: currentColor;
     color: inherit;
   }
-  .prose.prose-on-accent :is(a, button) {
+  .prose.prose-on-accent :is(a, button, [role='button']) {
     color: inherit;
   }
   .prose.prose-on-accent a {

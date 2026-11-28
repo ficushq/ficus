@@ -625,7 +625,14 @@ for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
       const scroller = view.container.querySelector<HTMLElement>('.overflow-y-auto')!
       scroller.scrollTop = 400
       await dom.act(async () => {
-        ;[...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Review agent')!.click()
+        const trigger = [...view.container.querySelectorAll<HTMLElement>('[role="button"]')].find(
+          (button) => button.textContent === 'Review agent'
+        )!
+        expect(trigger.tabIndex).toBe(0)
+        trigger.dispatchEvent(
+          new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+        )
+        trigger.dispatchEvent(new dom.window.KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true }))
       })
       await dom.act(async () => {
         await waitFor(() => expect(view.container.textContent).toContain('Close referenced agent'))
