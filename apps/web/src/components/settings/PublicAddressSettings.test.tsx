@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../../test/domHarness'
 import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePermissions'
 import { publicUrlQueryKeys } from '../../queryKeys'
-import type { PublicAppUrlPreview, PublicAppUrlStatus } from '../../api/publicUrl'
+import type { PhoneReachReport, PublicAppUrlPreview, PublicAppUrlStatus } from '../../api/publicUrl'
+import { ServerAddressSection } from './ServerAddressSection'
 import { PublicAddressSettings } from './PublicAddressSettings'
 
 let cleanup: (() => Promise<void>) | undefined
@@ -61,6 +62,7 @@ type Reply = (body: unknown) => Response
 async function render(
   status: PublicAppUrlStatus,
   options: {
+    settingsPage?: boolean
     write?: boolean
     put?: (body: unknown, reply: Reply) => Response
     url?: string
@@ -86,6 +88,14 @@ async function render(
   }) as typeof fetch
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(publicUrlQueryKeys.status(), status)
+  if (options.settingsPage) {
+    queryClient.setQueryData<PhoneReachReport>(publicUrlQueryKeys.reach(), {
+      current: { url: status.url ?? null, reach: 'this-computer', https: false },
+      listening: { host: '0.0.0.0', port: 3000, beyondThisComputer: true, desktopManaged: false },
+      homeNetwork: { addresses: [] },
+      tailscale: { state: 'not-installed', cli: null, serveCommand: 'tailscale serve --bg http://127.0.0.1:3000' },
+    })
+  }
   cleanup = async () => {
     globalThis.fetch = previousFetch
     await dom.cleanup()
@@ -104,7 +114,11 @@ async function render(
     root.render(
       <QueryClientProvider client={queryClient}>
         <PermissionsProvider usePermissions={() => permissions}>
-          <PublicAddressSettings onSaved={(message) => saved.push(message)} proposed={options.proposed} />
+          {options.settingsPage ? (
+            <ServerAddressSection />
+          ) : (
+            <PublicAddressSettings onSaved={(message) => saved.push(message)} proposed={options.proposed} />
+          )}
         </PermissionsProvider>
       </QueryClientProvider>
     )
@@ -356,3 +370,17 @@ test('an http public address still says the app needs HTTPS', async () => {
     expect(document.body.textContent).toContain('The Ficus app and Mobile & Pro need an HTTPS address.')
   )
 })
+
+for (const lockedBy of ['managed', 'environment'] as const) {
+  test(`server address settings with lockedBy=${lockedBy} show only applicable sections`, async () => {
+    const { container } = await render(
+      { ...localOnly, source: 'environment', locked: true, lockedBy },
+      { settingsPage: true }
+    )
+    expect(container.textContent).toContain('Public address')
+    const managed = lockedBy === 'managed'
+    expect(container.textContent?.includes('Managed by Ficus Cloud.')).toBe(managed)
+    expect(container.textContent?.includes('Reach this server from a mobile device')).toBe(!managed)
+    expect(container.querySelectorAll('section.ficus-section').length).toBe(managed ? 1 : 2)
+  })
+}
