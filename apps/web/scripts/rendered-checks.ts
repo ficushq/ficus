@@ -46,6 +46,7 @@ export const RENDERED_CHECKS: readonly RenderedCheck[] = [
     fixture: 'scripts/fixtures/history-search-placement.tsx',
     seconds: 15,
   },
+  { script: 'check-inline-references.ts', fixture: 'scripts/fixtures/inline-references.tsx', seconds: 10 },
   { script: 'check-integration-rows-layout.ts', fixture: 'scripts/fixtures/integration-rows.tsx', seconds: 30 },
   { script: 'check-linear-integration-layout.ts', fixture: 'scripts/fixtures/linear-integration.tsx', seconds: 20 },
   { script: 'check-live-list-motion.ts', fixture: 'scripts/fixtures/live-list-motion.tsx', seconds: 135 },

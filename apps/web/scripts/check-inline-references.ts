@@ -1,7 +1,16 @@
 /** From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-inline-references.ts */
 import assert from 'node:assert/strict'
-import { chromium, type Browser } from 'playwright-core'
+import { mkdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
+import type { Browser } from 'playwright-core'
 import { startFixtureServer } from './fixture-server'
+
+const { chromium } = createRequire(resolve(import.meta.dir, '../../core/package.json'))(
+  'playwright-core'
+) as typeof import('playwright-core')
+const screenshotDir = process.env.SCREENSHOT_DIR
+if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
 
 const server = await startFixtureServer({ entry: '/scripts/fixtures/inline-references.tsx' })
 let browser: Browser | undefined
@@ -30,7 +39,7 @@ try {
   )
   assert.equal(results.length, 5)
   for (const result of results) assert.deepEqual(result, { startsInline: true, wrapsAtMargin: true, endsInline: true })
-  if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT })
+  if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, 'inline-references.png') })
   console.log('Both entity types flow with Activity and Markdown text, as do inline file downloads.')
 } finally {
   await browser?.close()
