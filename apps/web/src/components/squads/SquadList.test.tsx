@@ -159,15 +159,16 @@ describe('squad cards', () => {
   })
 
   test('once the streams load, a squad with nothing to reorder skips the placeholders', () => {
-    // No active work: the quiet line at once, matching the footer's count.
+    // Terminal streams leave only the footer count, even before pending actions load.
     const empty = renderCards([], [work(1, '2026-11-20T00:00:00Z', { status: 'done' })], null)
-    expect(empty).toContain('No active work')
+    expect(empty).not.toContain('No active work')
     expect(empty).not.toContain('squad-card-work-placeholder')
 
     // One active stream: the viewer's actions could not move it, so its row shows now.
     const single = renderCards([], [work(1, '2026-11-20T00:00:00Z')], null)
     expect(rowTitles(single)).toEqual(['#1 · Stream 1'])
     expect(single).not.toContain('squad-card-work-placeholder')
+    expect(single).toContain('<div class="mb-3 -mx-2"><ul aria-label="Chlea active work"')
   })
 
   test('the placeholders hold the "+N more" line, so the card keeps its height when the rows arrive', () => {
@@ -191,9 +192,11 @@ describe('squad cards', () => {
     expect(rowTitles(html)).toEqual(['#1 · Stream 1', '#2 · Stream 2', '#3 · Stream 3'])
   })
 
-  test('a squad with no active work says so in one quiet line', () => {
-    const html = renderCards([], [work(1, '2026-11-20T00:00:00Z', { status: 'done' })])
-    expect(html).toContain('<p class="mb-3 text-sm text-muted">No active work</p>')
+  test('an idle squad shows its footer directly after its description', () => {
+    const html = renderCards([])
+    expect(html).toContain(
+      'Short</p><div class="mt-auto flex items-center gap-3 text-xs text-muted"><span>0 active work streams</span>'
+    )
     expect(rowTitles(html)).toEqual([])
   })
 
