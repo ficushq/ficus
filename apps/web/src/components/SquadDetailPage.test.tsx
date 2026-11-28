@@ -294,9 +294,9 @@ test('cold squad Work keeps filters instead of a generic page skeleton or premat
   expect(html).not.toContain('No work streams yet')
 })
 
-test('cold squad Activity keeps its filter toolbar and presence strip', () => {
+test('cold squad Activity keeps its Filters control and presence strip', () => {
   const html = renderSquadDetail({ loading: true, entry: `/squads/${squad.id}/activity` })
-  expect(html).toContain('Activity kind filters')
+  expect(html).toContain('aria-label="Filters"')
   expect(html).toContain('activity-presence')
   expect(html).toContain('waiting on you')
 })

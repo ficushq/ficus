@@ -17,7 +17,13 @@ import { activityAgentLabel, activitySubjectLabel, globalActivityItemHref } from
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { Modal } from './Modal'
 import { AgentConversation } from './AgentConversation'
-import { parseSettledActivityParams, SETTLED_FILTER_TITLES, settledPeriodLabel } from '../lib/settledActivity'
+import {
+  withoutSettledParams,
+  parseSettledActivityParams,
+  SETTLED_FILTER_TITLES,
+  settledPeriodLabel,
+  settledPeriodTitle,
+} from '../lib/settledActivity'
 import { useAgentTypeNames } from '../hooks/useAgentTypeNames'
 
 const EMPTY_PRESENCE: GlobalActivityPresence = {
@@ -87,11 +93,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   )
   const { settled, squadIds: settledSquadIds } = useMemo(() => parseSettledActivityParams(searchParams), [searchParams])
   const clearSettled = useCallback(() => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      for (const key of ['settled', 'since', 'until', 'squad']) next.delete(key)
-      return next
-    })
+    setSearchParams(withoutSettledParams)
   }, [setSearchParams])
   const filters = useMemo<NormalizedSquadActivityFilters>(
     () => ({
@@ -177,29 +179,17 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Activity">
-      <h1 className="ficus-page-title mb-4 shrink-0">Activity</h1>
-      {settled && (
-        <div
-          className="ficus-section mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-xs text-secondary"
-          role="status"
-          data-testid="activity-settled-filter"
-        >
-          <span>
-            <span className="font-medium text-primary">{SETTLED_FILTER_TITLES[settled.kind]}</span>{' '}
-            {settledPeriodLabel(settled.since).replace(/^Since/, 'since')}
-            {settledSquadIds.length > 0 &&
-              ` · ${settledSquadIds.length === 1 ? '1 squad' : `${settledSquadIds.length} squads`}`}
-          </span>
-          <button
-            type="button"
-            className="ficus-button ficus-button-ghost ml-auto rounded-md px-2 py-1 text-xs"
-            onClick={clearSettled}
-          >
-            Show all activity
-          </button>
-        </div>
-      )}
       <ActivityFeedView
+        title="Activity"
+        settledChip={
+          settled
+            ? {
+                label: `${SETTLED_FILTER_TITLES[settled.kind]} · ${settledPeriodLabel(settled.since).replace(/^Since/, 'since')}${settledSquadIds.length ? ` · ${settledSquadIds.length} squad${settledSquadIds.length === 1 ? '' : 's'}` : ''}`,
+                period: settledPeriodTitle(settled),
+                onRemove: clearSettled,
+              }
+            : undefined
+        }
         kinds={kinds}
         onKindsChange={setKinds}
         presence={presence}

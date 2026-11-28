@@ -37,6 +37,13 @@ describe('useTabHistory store', () => {
     expect(getTabPath('squads')).toBe('/squads/abc?tab=agents')
   })
 
+  test('the Activity tab always opens the unfiltered root', () => {
+    for (const route of ['/activity?settled=reviews&since=2026-11-06', '/activity?workStream=w']) {
+      recordTabPath(route)
+      expect(getTabNavigationTarget('/', '/activity')).toBe('/activity')
+    }
+  })
+
   test('ignores unknown routes', () => {
     recordTabPath('/voice')
     expect(getTabPath('feed')).toBe('/')

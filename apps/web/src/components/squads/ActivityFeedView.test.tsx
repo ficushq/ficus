@@ -400,7 +400,10 @@ test('sender rows hide only while a matching received row is shown, and Show eve
     expect(view.container.textContent).toContain('Sending the handoff')
     expect(ids()).toHaveLength(2)
 
-    const toggle = view.container.querySelector<HTMLButtonElement>('[data-testid="activity-show-everything"]')!
+    await dom.act(() =>
+      dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters, Show everything"]')!.click()
+    )
+    const toggle = dom.window.document.querySelector<HTMLButtonElement>('[data-testid="activity-show-everything"]')!
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     await dom.act(() => toggle.click())
     expect(changes).toEqual([false])

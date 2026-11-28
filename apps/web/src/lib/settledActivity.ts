@@ -49,7 +49,7 @@ export function settledLineParts(summary: ActivitySettledSummary | null | undefi
   })
 }
 
-/** Activity's banner title for one settled filter. */
+/** Activity's chip title for one settled filter. */
 export const SETTLED_FILTER_TITLES: Record<ActivitySettledKind, string> = {
   questions: 'Questions settled by agents',
   reviews: 'Reviews done by agents',
@@ -84,4 +84,15 @@ export function parseSettledActivityParams(params: URLSearchParams): {
     },
     squadIds: [...new Set(params.getAll('squad'))].sort(),
   }
+}
+
+export function withoutSettledParams(current: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(current)
+  for (const key of ['settled', 'since', 'until', 'squad']) next.delete(key)
+  return next
+}
+
+/** Exact bounds in the viewer's locale, matching Feed timestamp tooltips. */
+export function settledPeriodTitle({ since, until }: Pick<ActivitySettledFilter, 'since' | 'until'>): string {
+  return `From ${new Date(since).toLocaleString()}${until ? ` until ${new Date(until).toLocaleString()}` : ''}`
 }

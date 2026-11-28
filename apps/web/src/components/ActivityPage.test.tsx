@@ -2,7 +2,7 @@ import { waitFor } from '@testing-library/dom'
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter, useLocation } from 'react-router'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import type {
   GlobalActivityPresence,
   GlobalSquadActivityItem,
@@ -171,11 +171,11 @@ describe('ActivityPage rendering', () => {
     expect(html).toContain('Squad Alpha')
     expect(html).toContain('Squad Bravo')
     // Shared filter toolbar (same FILTER_GROUPS as the per-squad tab).
-    expect(html).toContain('>All<')
-    expect(html).toContain('>Messages<')
-    expect(html).toContain('>Work<')
-    expect(html).toContain('>Subagents<')
-    expect(html).toContain('>GitHub<')
+    expect(html).toContain('aria-label="Filters"')
+    expect(html).not.toContain('>Messages<')
+    expect(html).not.toContain('>Work<')
+    expect(html).not.toContain('>Subagents<')
+    expect(html).not.toContain('>GitHub<')
     expect(html).toContain('data-testid="activity-presence"')
     expect(html).toContain('1 working')
     expect(html).toContain('2 waiting on you')
@@ -283,11 +283,12 @@ describe('ActivityPage kind filtering', () => {
           </MemoryRouter>
         )
       })
-      const filters = dom.window.document.querySelector('[aria-label="Activity kind filters"]')!
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
+      const filters = dom.window.document.querySelector('[data-testid="work-stream-filters"]')!.parentElement!
       const button = (label: string) =>
-        [...filters.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
+        [...dom.window.document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)!
 
-      expect(button('All').getAttribute('aria-pressed')).toBe('true')
+      expect(filters.querySelector('button[aria-label="Filters"]')).not.toBeNull()
       await dom.act(async () => {
         button('Messages').click()
         await Bun.sleep(0)
@@ -297,7 +298,7 @@ describe('ActivityPage kind filtering', () => {
       expect(filters.getAttribute('aria-busy')).toBe('true')
       expect(filters.className).toContain('animate-pulse')
       expect(dom.window.document.body.textContent).toContain('Cross-squad work')
-      expect(button('All').getAttribute('aria-pressed')).toBe('false')
+      expect(filters.querySelector('button[aria-label="Filters, Messages"]')).not.toBeNull()
       expect(button('Messages').getAttribute('aria-pressed')).toBe('true')
 
       await dom.act(async () => {
@@ -311,8 +312,8 @@ describe('ActivityPage kind filtering', () => {
       expect(dom.window.document.body.textContent).not.toContain('Cross-squad work')
       expect(dom.window.document.body.textContent).toContain('Implementation ready')
 
-      await dom.act(async () => button('All').click())
-      expect(button('All').getAttribute('aria-pressed')).toBe('true')
+      await dom.act(async () => filters.querySelector<HTMLButtonElement>('[aria-label="Clear filters"]')!.click())
+      expect(filters.querySelector('button[aria-label="Filters"]')).not.toBeNull()
       expect(button('Messages').getAttribute('aria-pressed')).toBe('false')
     } finally {
       globalThis.fetch = originalFetch
@@ -616,7 +617,8 @@ for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
           </MemoryRouter>
         )
       )
-      const messages = [...view.container.querySelectorAll('button')].find(
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
+      const messages = [...dom.window.document.querySelectorAll('button')].find(
         (button) => button.textContent === 'Messages'
       )!
       await dom.act(() => messages.click())
@@ -765,6 +767,7 @@ describe('ActivityPage Active work strip and Show everything', () => {
       })
       expect(trigger.getAttribute('aria-label')).toContain('showing #12')
 
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Filters"]')!.click())
       await dom.act(async () => {
         document.querySelector<HTMLButtonElement>('[data-testid="activity-show-everything"]')!.click()
         await Bun.sleep(0)
@@ -863,19 +866,35 @@ describe('ActivityPage settled filter from the Feed', () => {
       expect(parseSettledActivityParams(new URLSearchParams(query))).toEqual({ squadIds: [] })
   })
 
-  test('asks for exactly the counted rows and "Show all activity" drops the filter', async () => {
+  test('a malformed settled link renders unfiltered rows without a chip', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/activity?settled=reviews&since=soon']}>
+        <QueryClientProvider client={seedClient([workItem])}>
+          <WebSocketContext.Provider value={socket}>
+            <ActivityPage />
+          </WebSocketContext.Provider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+    expect(html).toContain('Cross-squad work')
+    expect(html).not.toContain('Remove Reviews done by agents')
+  })
+
+  test('asks for exactly the counted rows and the chip removes the filter', async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/', api })
     const rendered = dom.createRoot()
     const client = seedClient([workItem])
-    const since = '2026-11-25T09:00:00.000Z'
+    const since = '2020-11-06T12:00:00.000Z'
     const until = '2026-11-26T12:00:00.000Z'
+    client.removeQueries({ queryKey: queryKeys.activity.globalInfinite(filters) })
     const originalFetch = globalThis.fetch
     const requested: string[] = []
     let location = ''
     function Location() {
       const current = useLocation()
       location = current.search
-      return null
+      const navigate = useNavigate()
+      return <button onClick={() => navigate(-1)}>Back</button>
     }
     globalThis.fetch = mock(async (input) => {
       const url = String(input)
@@ -893,7 +912,7 @@ describe('ActivityPage settled filter from the Feed', () => {
         rendered.root.render(
           <MemoryRouter
             initialEntries={[
-              `/activity?settled=questions&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&squad=${squadAId}`,
+              `/activity?settled=questions&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}&squad=${squadAId}&keep=yes`,
             ]}
           >
             <QueryClientProvider client={client}>
@@ -906,8 +925,13 @@ describe('ActivityPage settled filter from the Feed', () => {
         )
       })
       const document = dom.window.document
-      const banner = document.querySelector('[data-testid="activity-settled-filter"]')!
-      expect(banner.textContent).toContain('Questions settled by agents')
+      expect(document.querySelector('[data-testid="activity-settled-filter"]')).toBeNull()
+      const chip = document.querySelector<HTMLButtonElement>(
+        'button[aria-label^="Remove Questions settled by agents"]'
+      )!
+      expect(chip.textContent).toContain('Questions settled by agents · since Nov 6 · 1 squad')
+      expect(chip.title).toContain(new Date(since).toLocaleString())
+      expect(chip.title).toContain(new Date(until).toLocaleString())
       await dom.act(async () => {
         await waitFor(() =>
           expect(
@@ -922,12 +946,16 @@ describe('ActivityPage settled filter from the Feed', () => {
         )
       })
       await dom.act(async () => {
-        ;[...banner.querySelectorAll<HTMLButtonElement>('button')]
-          .find((button) => button.textContent === 'Show all activity')!
-          .click()
+        chip.click()
         await Bun.sleep(0)
       })
-      expect(location).toBe('')
+      expect(location).toBe('?keep=yes')
+      expect(requested.some((url) => !/[?&](settled|since|until|squadId)=/.test(url))).toBe(true)
+      expect(chip.isConnected).toBe(false)
+      await dom.act(() =>
+        [...document.querySelectorAll('button')].find((button) => button.textContent === 'Back')!.click()
+      )
+      expect(document.querySelector('button[aria-label^="Remove Questions settled by agents"]')).not.toBeNull()
       expect(document.querySelector('[data-testid="activity-settled-filter"]')).toBeNull()
     } finally {
       globalThis.fetch = originalFetch
