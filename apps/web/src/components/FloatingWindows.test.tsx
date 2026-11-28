@@ -488,7 +488,7 @@ test('Shift-click on a markdown ficus:agent: reference opens a floating window, 
     <MarkdownContent>{`Ask [the researcher](ficus:agent:${A}) or [the reviewer](ficus:agent:bbbbbbbb).`}</MarkdownContent>
   )
   try {
-    const [researcher, reviewer] = [...document.querySelectorAll<HTMLButtonElement>('button[data-agent-chat-id]')]
+    const [researcher, reviewer] = [...document.querySelectorAll<HTMLElement>('[role="button"][data-agent-chat-id]')]
     expect(researcher!.textContent).toBe('the researcher')
     await t.click(researcher!, { shiftKey: true })
     expect(t.windows().map((w) => w.dataset.floatingWindow)).toEqual([A])
