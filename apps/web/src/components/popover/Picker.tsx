@@ -202,9 +202,18 @@ export function Picker<T extends string>(props: PickerProps<T>) {
               select(first)
               if (multiple) setQuery('')
             }}
-            className="ficus-field mb-1.5 w-full rounded-md border border-panel-border bg-surface px-2.5 py-2 text-sm"
+            className={clsx(
+              'ficus-field mb-1.5 w-full rounded-md border border-panel-border bg-surface px-2.5 py-2 text-sm [[data-keyboard-viewport]_&]:shrink-0',
+              popoverProps.mobileKeyboardViewport && 'max-md:text-base max-md:leading-5'
+            )}
           />
-          <div id={`${id}-list`} role="listbox" aria-label={label} aria-multiselectable={multiple || undefined}>
+          <div
+            id={`${id}-list`}
+            role="listbox"
+            aria-label={label}
+            aria-multiselectable={multiple || undefined}
+            className="[[data-keyboard-viewport]_&]:min-h-0 [[data-keyboard-viewport]_&]:overflow-y-auto [[data-keyboard-viewport]_&]:overscroll-contain"
+          >
             {rows}
           </div>
           {shown.length === 0 && (

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { SQUAD_SETTINGS_SECTIONS as SECTIONS, resolveSquadSettingsSection } from '../../lib/squadNavigation'
 import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -27,6 +28,7 @@ import { Can } from '../Can'
 import { SettingsNavigation } from '../settings/SettingsNavigation'
 import { SettingsSearchDestination } from '../settings/SettingsSearchDestination'
 import { SQUAD_SETTINGS_KEYWORDS, squadSettingsSearchEntries } from './squadSettingsSearch'
+import { useSquadSettingsScroll } from './useSquadSettingsScroll'
 import { SquadDangerZone } from './SquadDangerZone'
 import { usePermissions } from '../../hooks/usePermissions'
 
@@ -63,6 +65,8 @@ export function SquadSettingsTab({
   consultantIdleDormancyDays,
   hostWorkspacePath,
 }: Props) {
+  const formRef = useRef<HTMLDivElement>(null)
+  useSquadSettingsScroll(formRef)
   const [searchParams, setSearchParams] = useSearchParams()
   const sectionParam = resolveSquadSettingsSection(searchParams.get('section'), searchParams.get('setting'))
 
@@ -111,7 +115,7 @@ export function SquadSettingsTab({
   }))
 
   return (
-    <div className="h-full min-h-0 flex flex-col md:flex-row gap-4 md:gap-6">
+    <div className="squad-settings-layout h-full min-h-0 flex flex-col md:flex-row gap-4 md:gap-6">
       <SettingsNavigation
         groups={groups}
         activeSection={activeSection}
@@ -121,7 +125,7 @@ export function SquadSettingsTab({
         pageKeywords={SQUAD_SETTINGS_KEYWORDS}
         searchEntries={squadSettingsSearchEntries({ hostRuntime, sandboxSectionReady, canDeleteSquad })}
       />
-      <div className="min-w-0 min-h-0 flex-1 overflow-y-auto">
+      <div ref={formRef} className="squad-settings-form min-w-0 min-h-0 flex-1 overflow-y-auto">
         <SettingsSearchDestination section={activeSection} target={searchParams.get('setting') ?? undefined}>
           {(activeSection === 'general' ||
             activeSection === 'work' ||

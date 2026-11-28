@@ -15,6 +15,7 @@ import { useStableRef } from '../../hooks/useStableRef'
 import '@xterm/xterm/css/xterm.css'
 import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
 import { attachLegacyAltArrowKeys } from './altArrowKeys'
+import { terminalTouchScroll } from './terminalTouchScroll'
 
 export interface TerminalProps {
   sandboxId: string
@@ -197,6 +198,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
 
       stopThemeObserverRef.current = observeTerminalTheme(terminal, container)
       terminal.open(container)
+      if (container.closest('.workspace-mobile-terminal')) terminal.loadAddon(terminalTouchScroll())
       fitAddon.fit()
 
       terminalRef.current = terminal

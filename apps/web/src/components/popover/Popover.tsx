@@ -18,6 +18,7 @@ import { usePopupDismiss, type PopupDismissReason } from '../../hooks/usePopupDi
 import { useStableRef } from '../../hooks/useStableRef'
 import type { Box, PopupAlign, PopupSide } from '../../lib/popupPosition'
 import { Presence } from '../Presence'
+import { CloseIcon } from '../icons/CloseIcon'
 import { focusInPopover, initialTarget, tabbables } from './focus'
 import { usePopoverPosition, type PopoverWidth } from './usePopoverPosition'
 
@@ -36,7 +37,7 @@ const PopoverDepth = createContext(0)
  * Why a popover closed: `usePopupDismiss`'s reasons (`select` among them, for an item run by a handler
  * outside the popover), its anchor disappearing, Tab leaving a menu, or an item chosen.
  */
-export type PopoverDismissReason = PopupDismissReason | 'anchor' | 'tab'
+export type PopoverDismissReason = PopupDismissReason | 'anchor' | 'tab' | 'close'
 
 /** What gets focus when a popover opens: the first focusable element, the selected one, nothing, or a pick. */
 export type PopoverInitialFocus =
@@ -66,6 +67,8 @@ export interface PopoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'role
   width?: PopoverWidth
   /** The tallest it may be before it scrolls (default: whatever the viewport allows). */
   maxHeight?: number | ((viewport: Box) => number)
+  /** Opt in for searchable pickers. Keep the same content mounted and scroll results separately. */
+  mobileKeyboardViewport?: boolean
   /** A region it must also stay inside. */
   boundary?: RefObject<HTMLElement | null>
   /** Close when the anchor scrolls fully out of view (hover cards). */
@@ -121,6 +124,7 @@ export function Popover({
   alignOffset,
   width = 'content',
   maxHeight,
+  mobileKeyboardViewport,
   boundary,
   loseOffscreenAnchor,
   portal = true,
@@ -163,6 +167,7 @@ export function Popover({
     popup: surface,
     width,
     maxHeight,
+    mobileKeyboardViewport,
     boundary,
     side,
     align,
@@ -246,6 +251,7 @@ export function Popover({
     [ref]
   )
 
+  const keyboardPlacement = placement?.keyboardViewport ? placement : undefined
   const zIndex = POPOVER_LAYERS[layer] + depth
   const element = mounted && (
     <PopoverDepth.Provider value={depth + 1}>
@@ -255,8 +261,13 @@ export function Popover({
         role={role}
         data-popover=""
         data-placement={placement?.side}
+        data-keyboard-viewport={keyboardPlacement ? '' : undefined}
         onKeyDown={onSurfaceKeyDown}
-        className={clsx('fixed outline-hidden', scroll && 'overflow-y-auto overscroll-contain', className)}
+        className={clsx(
+          'fixed outline-hidden',
+          keyboardPlacement ? 'flex flex-col overflow-hidden' : scroll && 'overflow-y-auto overscroll-contain',
+          className
+        )}
         style={{
           left: placement?.left ?? 0,
           top: placement?.top ?? 0,
@@ -270,9 +281,34 @@ export function Popover({
               : style?.maxWidth,
           maxHeight: placement?.maxHeight,
           zIndex,
+          ...(keyboardPlacement && {
+            left: `calc(${keyboardPlacement.left}px + env(safe-area-inset-left, 0px))`,
+            top: `calc(${keyboardPlacement.top}px + env(safe-area-inset-top, 0px))`,
+            width: `calc(${keyboardPlacement.width}px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))`,
+            maxWidth: 'none',
+            height: `calc(${keyboardPlacement.maxHeight}px - env(safe-area-inset-top, 0px))`,
+          }),
         }}
         {...props}
       >
+        {keyboardPlacement && (
+          <div className="flex shrink-0 items-center justify-between gap-2 px-1 pb-1">
+            <span aria-hidden className="truncate text-sm font-medium text-primary">
+              {props['aria-label']}
+            </span>
+            <button
+              type="button"
+              aria-label="Close picker"
+              className="ficus-button ficus-button-ghost grid size-10 shrink-0 place-items-center"
+              onClick={() => {
+                if (returnFocus) trigger?.current?.focus({ preventScroll: true })
+                onDismiss('close')
+              }}
+            >
+              <CloseIcon className="size-4" />
+            </button>
+          </div>
+        )}
         {children}
       </Presence>
     </PopoverDepth.Provider>

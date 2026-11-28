@@ -124,6 +124,7 @@ export function ActivityWorkPicker({ cards, total, selectedId, onSelect, moreHre
           else onSelect(value || null)
         }}
         align="start"
+        mobileKeyboardViewport
         maxHeight={(viewport) => Math.min(480, 0.7 * (viewport.bottom - viewport.top))}
         className="w-[28rem] max-w-[calc(100vw-2rem)]"
       />

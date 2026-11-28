@@ -296,7 +296,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
   return (
     <div className="squad-detail-page flex flex-col flex-1 min-h-0" data-active-tab={activeTab}>
       {/* Header */}
-      <div className="md:hidden shrink-0 mb-3">
+      <div className="squad-detail-mobile-header md:hidden shrink-0 mb-3">
         <div data-testid="mobile-squad-header-back-row" className="mb-2">
           <BackLink to="/squads">Squads</BackLink>
         </div>
