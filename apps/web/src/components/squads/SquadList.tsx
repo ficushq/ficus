@@ -278,13 +278,15 @@ function SquadCardContent({
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>
-      <SquadCardWork
-        squadName={squad.name}
-        squadSlug={squadSlug}
-        workStreams={workStreams}
-        workStreamsLoaded={workStreamsLoaded}
-        needsViewer={needsViewer}
-      />
+      {(!workStreamsLoaded || activeWorkStreams > 0) && (
+        <SquadCardWork
+          squadName={squad.name}
+          squadSlug={squadSlug}
+          workStreams={workStreams}
+          workStreamsLoaded={workStreamsLoaded}
+          needsViewer={needsViewer}
+        />
+      )}
       {/* Pinned to the card's bottom, so a short description still lines it up across a row. */}
       <div className="mt-auto flex items-center gap-3 text-xs text-muted">
         <span>

@@ -3,7 +3,7 @@
  * Every built-in theme (light and dark for dual themes) at 1280 and 390 pixels: a work row opens its
  * stream, "+N more" opens the squad's Work tab, the rest of the card opens the squad, and the drag
  * handle stays on top. While the viewer's actions load, each card's placeholders take the same height
- * as its rows ("+N more" included) and a squad with no active work already says so. Optional SCREENSHOT_DIR saves one screenshot per theme, appearance and width;
+ * as its rows ("+N more" included) and an idle squad shows only the footer counts below its description. Optional SCREENSHOT_DIR saves one screenshot per theme, appearance and width;
  * optional THEMES (comma-separated theme ids, for example `ficus,iris`) runs only those themes.
  */
 import assert from 'node:assert/strict'
@@ -38,10 +38,10 @@ async function clickAt(page: Page, x: number, y: number) {
   return page.getByTestId('location').textContent()
 }
 
-/** Each card's work section (rows, placeholders or the empty line, below the description) height. */
+/** Each card's work section (rows or placeholders below the description) height. */
 function workSectionHeights(page: Page) {
   return page
-    .locator('.ficus-panel p.line-clamp-2 + *')
+    .locator('.ficus-panel p.line-clamp-2 + .mb-3')
     .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height))
 }
 
@@ -79,7 +79,10 @@ try {
         `${label}: row order`
       )
       const research = page.locator('.ficus-panel', { hasText: 'Research' })
-      assert.equal(await research.getByText('No active work', { exact: true }).isVisible(), true)
+      assert.equal(
+        await research.locator('p.line-clamp-2 + div').getByText('0 active work streams', { exact: true }).count(),
+        1
+      )
       assert.equal(await research.getByTestId('squad-card-work-row').count(), 0)
 
       // Cards stay inside the viewport (long titles truncate rather than widen the card), and rows inside their card.
@@ -157,18 +160,21 @@ try {
       ])
 
       // While the viewer's actions load: placeholders as tall as the rows they stand for, and
-      // the squad with no active work says so at once.
+      // the idle squad still has no work section.
       await page.goto(`${url}&actions=pending`)
       await product.getByTestId('squad-card-work-placeholder').first().waitFor()
       assert.equal(await product.getByTestId('squad-card-work-placeholder').count(), 4, `${label}: placeholders`)
-      assert.equal(await research.getByText('No active work', { exact: true }).isVisible(), true)
+      assert.equal(
+        await research.locator('p.line-clamp-2 + div').getByText('0 active work streams', { exact: true }).count(),
+        1
+      )
       assert.equal(await research.getByTestId('squad-card-work-placeholder').count(), 0)
       if (screenshotDir) {
         await page.screenshot({ path: resolve(screenshotDir, `${label}-loading.png`), fullPage: true })
       }
       assert.deepEqual(await workSectionHeights(page), workHeights, `${label}: work heights while loading`)
 
-      console.log(`PASS ${label}: order, empty line, row fit, hover, clicks, keyboard order and loading heights`)
+      console.log(`PASS ${label}: order, idle card footer, row fit, hover, clicks, keyboard order and loading heights`)
       await page.close()
     }
   }

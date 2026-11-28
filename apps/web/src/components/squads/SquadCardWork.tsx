@@ -65,9 +65,6 @@ export function SquadCardWork({
       </LoadingSurface>
     )
   }
-  if (ordered.length === 0) {
-    return <p className="mb-3 text-sm text-muted">No active work</p>
-  }
   return (
     <div className="mb-3 -mx-2">
       <ul aria-label={`${squadName} active work`} className="flex flex-col">
