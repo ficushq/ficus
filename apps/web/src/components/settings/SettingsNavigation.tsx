@@ -141,7 +141,7 @@ export function SettingsNavigation({
             if (area === 'personal') selectArea(personal[0]?.id ?? 'account')
             else if (administration[0]?.items[0]) selectArea(administration[0].items[0].id)
           }}
-          className="mb-4"
+          className="mb-4 shrink-0"
         />
       )}
       <input
@@ -160,7 +160,7 @@ export function SettingsNavigation({
           setSearch(event.target.value)
           setSelection({ key: '', index: 0 })
         }}
-        className="ficus-field mb-4 h-9 w-full px-3 text-base md:text-sm"
+        className="ficus-field mb-4 h-9 w-full shrink-0 px-3 text-base md:text-sm"
       />
       <nav
         id={`${searchId}-${surface}-results`}
@@ -174,7 +174,7 @@ export function SettingsNavigation({
                 ? 'Administration sections'
                 : 'Personal settings sections'
         }
-        className="space-y-5"
+        className="space-y-5 [[data-keyboard-viewport]_&]:min-h-0 [[data-keyboard-viewport]_&]:overflow-y-auto [[data-keyboard-viewport]_&]:overscroll-contain"
       >
         {search.trim() ? (
           <div className="space-y-1">
@@ -288,6 +288,7 @@ export function SettingsNavigation({
           align="start"
           gap={8}
           boundary={settingsRegionRef}
+          mobileKeyboardViewport
           maxHeight={(viewport) => 0.6 * (viewport.bottom - viewport.top)}
           initialFocus={(panel) => panel.querySelector('input')}
           className="ficus-overlay p-3"

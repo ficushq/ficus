@@ -327,12 +327,13 @@ test('phone settings chooser handles WebKit taps, outside taps and Tab out', asy
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 
-test('phone chooser fits below the squad header and tracks the keyboard viewport', async () => {
+test('phone chooser keeps its focused input when it detaches and reanchors', async () => {
   const { container } = await setup()
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
   const chooser = trigger.parentElement!
   const viewport = new dom!.window.EventTarget()
-  Object.assign(viewport, { width: 390, height: 844, offsetTop: 0, offsetLeft: 0 })
+  Object.assign(viewport, { width: 390, height: 844, scale: 1, offsetTop: 0, offsetLeft: 0 })
+  Object.assign(dom!.window, { innerWidth: 390, innerHeight: 844 })
   Object.defineProperty(dom!.window, 'visualViewport', { configurable: true, value: viewport })
   const rect = (top: number, bottom: number) => ({ left: 0, right: 390, top, bottom, width: 390, height: bottom - top })
   container.getBoundingClientRect = () => rect(0, 740) as DOMRect
@@ -345,18 +346,24 @@ test('phone chooser fits below the squad header and tracks the keyboard viewport
     Object.assign(viewport, { height: 510 })
     viewport.dispatchEvent(new dom!.window.Event('resize'))
   })
-  // The keyboard shrank the visual viewport below the region: 510 - 350 - 16.
-  expect(menu.style.maxHeight).toBe('144px')
+  // The same panel fills the visual viewport, not just the space between trigger and dock.
+  const field = menu.querySelector('input')!
+  expect(menu.hasAttribute('data-keyboard-viewport')).toBe(true)
+  expect(menu.style.maxHeight).toBe('494px')
+  expect(dom!.window.document.activeElement).toBe(field)
   await dom!.act(async () => {
     Object.assign(viewport, { offsetTop: 100 })
     viewport.dispatchEvent(new dom!.window.Event('scroll'))
   })
-  // Panned down 100px: 610 - 350 - 16.
-  expect(menu.style.maxHeight).toBe('244px')
-  // Never taller than 60% of the visible viewport.
-  chooser.getBoundingClientRect = () => rect(0, 20) as DOMRect
-  await dom!.act(async () => viewport.dispatchEvent(new dom!.window.Event('resize')))
-  expect(menu.style.maxHeight).toBe('306px')
+  expect(menu.style.top).toContain('108px')
+  await dom!.act(async () => {
+    Object.assign(viewport, { height: 844, offsetTop: 0 })
+    viewport.dispatchEvent(new dom!.window.Event('resize'))
+  })
+  expect(menu.hasAttribute('data-keyboard-viewport')).toBe(false)
+  expect(menu.style.maxHeight).toBe('374px')
+  expect(menu.querySelector('input')).toBe(field)
+  expect(dom!.window.document.activeElement).toBe(field)
 })
 
 test('exact Agents page ranks ahead of keyword-only field matches', async () => {

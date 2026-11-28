@@ -40,12 +40,16 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   - `width` — `content` (default: the surface's own CSS width, capped at the viewport), a number, or
     `anchor` (as wide as the anchor); `maxHeight` — a number or `(viewport) => number`; `boundary` — a
     region it must also stay inside;
+  - `mobileKeyboardViewport` — opt in for phone search pickers. The same portaled surface leaves its
+    anchor while the keyboard is up, gains a Close button, and fills the visual viewport. `Picker`
+    keeps its search above the scrolling list; custom `Panel` content needs its own results scroller
+    under `[data-keyboard-viewport]`;
   - `initialFocus` — `first` (default), `selected`, `none`, or `(surface) => element`;
   - `tabOut` — `continue` (default), `close` (menus/listboxes) or `none`;
   - `dismissible`, `escape`, `focusOut`, `restoreFocus`, `returnFocus`, `inside` — dismissal options;
   - `portal` (default true; `false` renders in place, still `position: fixed`), `layer`, `scroll`.
 - Dismiss reasons: `pointer`, `escape`, `focus` (from `usePopupDismiss`), `anchor` (the anchor stopped
-  rendering, or for a hover card scrolled out of view), `tab` (Tab out of a menu) and `select` (a menu
+  rendering, or for a hover card scrolled out of view), `close` (the keyboard viewport's Close button), `tab` (Tab out of a menu) and `select` (a menu
   item or option ran, or `dismissPopupsContaining` closed it).
 
 ### Variants

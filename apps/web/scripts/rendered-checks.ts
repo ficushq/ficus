@@ -53,6 +53,7 @@ export const RENDERED_CHECKS: readonly RenderedCheck[] = [
   { script: 'check-local-bigbrain-layout.ts', fixture: 'scripts/fixtures/local-bigbrain.tsx', seconds: 15 },
   { script: 'check-managed-bigbrain-layout.ts', fixture: 'scripts/fixtures/managed-bigbrain.tsx', seconds: 20 },
   { script: 'check-markdown-prose-contrast.ts', fixture: 'scripts/fixtures/markdown-prose.tsx', seconds: 10 },
+  { script: 'check-mobile-keyboard.ts', fixture: 'scripts/fixtures/mobile-keyboard.tsx', seconds: 15 },
   { script: 'check-mobile-touch-targets.ts', fixture: 'scripts/fixtures/mobile-touch-targets.tsx', seconds: 10 },
   {
     script: 'check-needs-you-notifications.ts',

@@ -24,6 +24,7 @@ import { FileTree } from './FileTree'
 import { FileViewer } from './FileViewer'
 import { TerminalTabs } from './TerminalTabs'
 import { useURLState } from '../../hooks/useURLState'
+import { isKeyboardField } from '../../hooks/useVisualViewportShell'
 import { usePermissions } from '../../hooks/usePermissions'
 import { queries } from '../../queryOptions'
 import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
@@ -225,6 +226,35 @@ function WorkspaceLayout({
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Hold the compact layout while the keyboard is up, even if a shell tab takes focus (or a
+  // Safari tap blurs the textarea without focusing the button). A different editor can take over.
+  useEffect(() => {
+    if (mobilePane !== 'terminal') return
+    const workspace = containerRef.current
+    const shell = workspace?.closest<HTMLElement>('.ficus-app-shell')
+    if (!workspace || !shell) return
+    const doc = shell.ownerDocument
+    const update = () => {
+      const focused = doc.activeElement
+      if (shell.dataset.keyboard !== 'open') delete workspace.dataset.terminalKeyboard
+      else if (isKeyboardField(focused)) {
+        workspace.toggleAttribute(
+          'data-terminal-keyboard',
+          workspace.contains(focused) && !!focused.closest('.workspace-mobile-terminal .ficus-terminal')
+        )
+      }
+    }
+    const observer = new MutationObserver(update)
+    observer.observe(shell, { attributes: true, attributeFilter: ['data-keyboard'] })
+    doc.addEventListener('focusin', update)
+    update()
+    return () => {
+      observer.disconnect()
+      doc.removeEventListener('focusin', update)
+      delete workspace.dataset.terminalKeyboard
+    }
+  }, [mobilePane])
+
   // Handle resize drag (desktop)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -263,12 +293,12 @@ function WorkspaceLayout({
 
   return (
     <div ref={containerRef} className="h-full min-h-0 flex flex-col">
-      {toolbar && <div className="shrink-0 mb-2">{toolbar}</div>}
+      {toolbar && <div className="workspace-mobile-chrome shrink-0 mb-2">{toolbar}</div>}
 
       {/* Mobile pane switcher */}
       <SegmentedControl
         ariaLabel="Workspace pane"
-        className="md:hidden shrink-0 mb-2"
+        className="workspace-mobile-chrome md:hidden shrink-0 mb-2"
         options={MOBILE_PANE_OPTIONS}
         value={mobilePane}
         onChange={setMobilePane}
@@ -294,7 +324,11 @@ function WorkspaceLayout({
       </div>
 
       {/* Mobile: Terminal pane */}
-      <div className={clsx('flex-1 min-h-0 md:hidden', mobilePane !== 'terminal' && 'hidden')}>{terminalSlot}</div>
+      <div
+        className={clsx('workspace-mobile-terminal flex-1 min-h-0 md:hidden', mobilePane !== 'terminal' && 'hidden')}
+      >
+        {terminalSlot}
+      </div>
 
       {/* Desktop: File browser section */}
       <div className="hidden md:flex flex-1 min-h-0 gap-3">

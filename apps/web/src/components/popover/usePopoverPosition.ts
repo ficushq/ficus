@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type RefObject } from 'react'
 import { useStableRef } from '../../hooks/useStableRef'
+import { keyboardShellHeight } from '../../hooks/useVisualViewportShell'
 import {
   intersectBoxes,
   placePopup,
@@ -20,6 +21,8 @@ export interface PopoverPositionOptions extends Omit<PlacementOptions, 'maxHeigh
   width?: PopoverWidth
   /** The tallest the popup may be before it scrolls, or a function of the visual viewport. */
   maxHeight?: number | ((viewport: Box) => number)
+  /** Use the visual viewport rather than the anchor while the phone keyboard is open. */
+  mobileKeyboardViewport?: boolean
   /** A region the popup must also stay inside (e.g. the page area above a phone's dock). */
   boundary?: RefObject<HTMLElement | null>
   /** The anchor stopped rendering (a breakpoint hid it), or, with `offscreen`, left the viewport. */
@@ -31,6 +34,7 @@ export interface PopoverPositionOptions extends Omit<PlacementOptions, 'maxHeigh
 export interface PopoverPlacement extends PopupPlacement {
   /** The widest the popup may grow: the usable viewport width. */
   maxWidth: number
+  keyboardViewport?: boolean
   /** Bumped per opening, so the first placement of every opening is a new object. */
   opening: number
 }
@@ -41,7 +45,8 @@ const same = (a: Omit<PopoverPlacement, 'opening'>, b: Omit<PopoverPlacement, 'o
   a.width === b.width &&
   a.maxWidth === b.maxWidth &&
   a.maxHeight === b.maxHeight &&
-  a.side === b.side
+  a.side === b.side &&
+  a.keyboardViewport === b.keyboardViewport
 
 let openings = 0
 
@@ -58,6 +63,7 @@ export function usePopoverPosition({
   popup,
   width = 'content',
   maxHeight = Infinity,
+  mobileKeyboardViewport,
   boundary,
   onAnchorLost,
   loseOffscreenAnchor = false,
@@ -82,12 +88,22 @@ export function usePopoverPosition({
   useLayoutEffect(() => {
     if (!open) return
     const opening = ++openings
+    const phone = mobileKeyboardViewport ? window.matchMedia('(width < 48rem)') : null
+    const commit = (next: Omit<PopoverPlacement, 'opening'>) => {
+      setPlacement((current) =>
+        current && current.opening === opening && same(current, next) ? current : { ...next, opening }
+      )
+    }
     const update = () => {
       const surface = popup.current
       if (!surface) return
       const options = latest.current
       const anchorElement = anchor.current
       const viewport = visualViewportBox()
+      const keyboardViewport =
+        phone?.matches &&
+        Math.abs((window.visualViewport?.scale ?? 1) - 1) < 0.01 &&
+        keyboardShellHeight(viewport.bottom - viewport.top, window.innerHeight) !== null
       let anchorBox: Box
       if (anchorElement) {
         // Responsive anchors can disappear while their portal is still mounted.
@@ -102,6 +118,20 @@ export function usePopoverPosition({
       } else {
         // No anchor (its trigger is hidden): hang from the top-right corner of the viewport.
         anchorBox = { left: viewport.right, right: viewport.right, top: viewport.top, bottom: viewport.top }
+      }
+      if (keyboardViewport) {
+        const margin = POPUP_VIEWPORT_MARGIN
+        const width = Math.max(0, viewport.right - viewport.left - 2 * margin)
+        commit({
+          left: viewport.left + margin,
+          top: viewport.top + margin,
+          width,
+          maxWidth: width,
+          maxHeight: Math.max(0, viewport.bottom - viewport.top - 2 * margin),
+          side: 'below',
+          keyboardViewport: true,
+        })
+        return
       }
       const area = options.boundary?.current
         ? intersectBoxes(viewport, options.boundary.current.getBoundingClientRect())
@@ -125,10 +155,7 @@ export function usePopoverPosition({
           maxHeight: typeof options.maxHeight === 'function' ? options.maxHeight(viewport) : options.maxHeight,
         }
       )
-      const next = { ...placed, maxWidth: Math.max(0, area.right - area.left - 2 * POPUP_VIEWPORT_MARGIN) }
-      setPlacement((current) =>
-        current && current.opening === opening && same(current, next) ? current : { ...next, opening }
-      )
+      commit({ ...placed, maxWidth: Math.max(0, area.right - area.left - 2 * POPUP_VIEWPORT_MARGIN) })
     }
     update()
     const viewport = window.visualViewport
@@ -162,7 +189,7 @@ export function usePopoverPosition({
       viewport?.removeEventListener('resize', update)
       viewport?.removeEventListener('scroll', update)
     }
-  }, [open, anchor, popup, latest])
+  }, [open, anchor, popup, latest, mobileKeyboardViewport])
 
   return placement
 }

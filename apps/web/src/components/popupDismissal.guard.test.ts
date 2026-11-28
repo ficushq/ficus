@@ -16,6 +16,7 @@ const PRIMITIVE = 'hooks/usePopupDismiss.ts'
 const LISTENER_ALLOWLIST: Record<string, string> = {
   'lib/pwaUpdater.ts': 'records user activity to time an update reload; dismisses nothing',
   'components/PullToRefresh.tsx': 'a pull gesture on its own container; dismisses nothing',
+  'components/workspace/terminalTouchScroll.ts': 'tracks a swipe inside xterm for scrollback; dismisses nothing',
   'components/FloatingWindows.tsx':
     'keeps a Shift-press on an agent link from extending the text selection before it opens a floating window; closes the popup holding the link only through dismissPopupsContaining',
 }

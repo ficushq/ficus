@@ -1722,3 +1722,37 @@
     -webkit-app-region: no-drag;
   }
 }
+
+/* The visual viewport hook already fit the shell. Only rearrange the surfaces inside it. */
+@media (width < 48rem) {
+  .ficus-app-shell[data-keyboard='open'] .squad-detail-page[data-active-tab='settings'] {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    .squad-detail-tab-content,
+    .squad-settings-layout,
+    .squad-settings-form {
+      flex: none;
+      height: auto;
+      overflow: visible;
+    }
+  }
+
+  .ficus-app-shell[data-keyboard='open']:has([data-terminal-keyboard]) {
+    .ficus-app-header,
+    [data-active-tab='workspace'] > :is(.squad-detail-mobile-header, .squad-detail-tabs),
+    [data-terminal-keyboard] .workspace-mobile-chrome {
+      display: none;
+    }
+
+    .ficus-app-main {
+      /* The header normally provides the in-flow top safe area. */
+      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+  }
+
+  /* xterm's viewport isn't a native touch scroller. The terminal handles single-finger scrollback. */
+  .workspace-mobile-terminal .ficus-terminal {
+    touch-action: none;
+  }
+}

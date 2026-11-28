@@ -134,7 +134,7 @@ export default function App() {
         <div
           ref={shellRef}
           data-testid="app-shell"
-          className="h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
+          className="ficus-app-shell h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
         >
           <AppHeader />
           <DesktopNotifications />
@@ -151,7 +151,7 @@ export default function App() {
             <NeedsYouNotifications />
             <main
               data-testid="app-scroll-container"
-              className="grow min-h-0 flex flex-col overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-w-7xl w-full mx-auto p-4 md:pt-6 md:px-6"
+              className="ficus-app-main grow min-h-0 flex flex-col overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-w-7xl w-full mx-auto p-4 md:pt-6 md:px-6"
             >
               <Routes>
                 <Route path="/" element={<FeedPage />} />
