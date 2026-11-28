@@ -39,6 +39,7 @@ try {
     Object.defineProperty(viewport, 'height', { get: () => keyboardHeight ?? innerHeight })
     window.addEventListener('fixture-keyboard', (event) => {
       keyboardHeight = (event as CustomEvent<number | null>).detail
+      performance.mark('fixture-keyboard-resize')
       viewport.dispatchEvent(new Event('resize'))
     })
   })
@@ -224,7 +225,11 @@ try {
   await terminalScreen.waitFor()
   await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent?.includes('shell-one $'))
   const appHeader = page.locator('.ficus-app-header')
-  const first = await box(terminal)
+  const terminalHandle = (await terminal.elementHandle())!
+  const initialFit = await terminalHandle.evaluate((el) => ({
+    height: el.getBoundingClientRect().height,
+    rows: el.querySelector('.xterm-rows')?.childElementCount,
+  }))
   await shot('workspace-closed')
   await terminalScreen.tap({ position: { x: 100, y: 70 } })
   assert.ok(await focused(textarea), 'Tapping xterm did not focus its keyboard input')
@@ -241,8 +246,25 @@ try {
   assert.equal(await page.getByTestId('app-scroll-container').evaluate((el) => el.scrollTop), 0)
   await shot('workspace-open')
   await keyboard(null)
+  // The header returns on the shell resize; xterm paints its restored rows after the
+  // ResizeObserver refit. Measure from the simulated viewport event, not Playwright's wait.
+  const refit = await page.waitForFunction(
+    ({ el, height, rows }) => {
+      if (Math.abs(el.getBoundingClientRect().height - height) >= 2) return false
+      if (el.querySelector('.xterm-rows')?.childElementCount !== rows) return false
+      const mark = performance.getEntriesByName('fixture-keyboard-resize', 'mark').at(-1)!
+      return { elapsed: Math.round(performance.now() - mark.startTime) }
+    },
+    { el: terminalHandle, ...initialFit }
+  )
+  const restored = await refit.jsonValue()
+  assert.ok(restored)
+  const { elapsed } = restored
+  console.log(
+    `Terminal restored ${Math.round(initialFit.height)}px and ${initialFit.rows} rows from ${Math.round(expandedTerminal.height)}px in ${elapsed}ms after keyboard dismissal.`
+  )
+  assert.ok(elapsed <= 300, `Terminal refit took ${elapsed}ms; expected at most 300ms`)
   await appHeader.waitFor()
-  assert.ok(Math.abs((await box(terminal)).height - first.height) < 2, 'Terminal did not return to its closed layout')
   assert.ok(await focused(textarea))
   await page.keyboard.type(' world')
   assert.equal(inputText, 'hello world')

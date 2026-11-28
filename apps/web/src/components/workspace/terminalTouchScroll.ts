@@ -21,6 +21,7 @@ function attachTerminalTouchScroll(terminal: Terminal, container: HTMLElement) {
     // Prevent a compatibility click after scrolling; it would move the terminal cursor or focus.
     if (drag.scrolling) event.preventDefault()
   }
+  // This is an inside-only terminal gesture, not a document listener or popup dismissal.
   container.addEventListener('touchstart', start, { passive: true })
   container.addEventListener('touchmove', move, { passive: false })
   return () => {
