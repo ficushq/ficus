@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { PhoneReachGuide } from './PhoneReachGuide'
-import { PublicAddressSettings } from './PublicAddressSettings'
+import { isCloudManaged, PublicAddressSettings, usePublicAddressStatus } from './PublicAddressSettings'
 
 /** Administration → Configuration → Server address: the server-wide public address. */
 export function ServerAddressSection() {
+  const { query } = usePublicAddressStatus()
   return (
     <div className="max-w-3xl space-y-6">
       <header>
@@ -13,7 +14,7 @@ export function ServerAddressSection() {
           passkeys, integration OAuth callbacks and webhooks, and the Ficus app.
         </p>
       </header>
-      <ServerAddressSetup />
+      <ServerAddressSetup showGuide={!!query.data && !isCloudManaged(query.data)} />
     </div>
   )
 }
@@ -22,7 +23,7 @@ export function ServerAddressSection() {
  * The address and how to make it reachable from a mobile device, without the page heading. Settings shows it
  * under that heading; onboarding's optional setup shows it inline.
  */
-export function ServerAddressSetup() {
+export function ServerAddressSetup({ showGuide = true }: { showGuide?: boolean }) {
   const [message, setMessage] = useState('')
   // The guide offers addresses; choosing one opens the form above with it.
   const [proposed, setProposed] = useState<{ url: string; n: number }>()
@@ -31,14 +32,16 @@ export function ServerAddressSetup() {
       <section className="ficus-section py-5">
         <PublicAddressSettings onSaved={setMessage} proposed={proposed} />
       </section>
-      <section className="ficus-section py-5">
-        <PhoneReachGuide
-          onUse={(url) => {
-            setProposed((previous) => ({ url, n: (previous?.n ?? 0) + 1 }))
-            document.querySelector('[data-setting-target="server-address"]')?.scrollIntoView({ block: 'start' })
-          }}
-        />
-      </section>
+      {showGuide && (
+        <section className="ficus-section py-5">
+          <PhoneReachGuide
+            onUse={(url) => {
+              setProposed((previous) => ({ url, n: (previous?.n ?? 0) + 1 }))
+              document.querySelector('[data-setting-target="server-address"]')?.scrollIntoView({ block: 'start' })
+            }}
+          />
+        </section>
+      )}
       {message && (
         <p role="status" className="text-sm text-muted">
           {message}

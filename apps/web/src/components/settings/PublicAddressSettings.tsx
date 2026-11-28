@@ -21,9 +21,21 @@ const FORM_ID = 'public-address-form'
 const FIELD = 'ficus-field w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-sm text-primary'
 const CONFLICT_MESSAGE = 'Someone else changed the public address. Review the current value and try again.'
 
+export function usePublicAddressStatus() {
+  const permissions = usePermissions()
+  const canRead = permissions.identity?.type === 'user' && permissions.can('settings:read')
+  const canWrite = canRead && permissions.can('settings:write')
+  const query = useQuery({ ...publicUrlQueries.status(), enabled: canRead })
+  return { canRead, canWrite, query }
+}
+
+export function isCloudManaged(status: PublicAppUrlStatus) {
+  return status.lockedBy === 'managed'
+}
+
 /** What the Source line says about where the effective address comes from. */
 function sourceDescription(status: PublicAppUrlStatus): ReactNode {
-  if (status.lockedBy === 'managed') return 'Managed by Ficus Cloud.'
+  if (isCloudManaged(status)) return 'Managed by Ficus Cloud.'
   if (status.source === 'environment') {
     if (status.environmentInvalid)
       return 'APP_URL in the server environment isn’t a valid address, so none is in use. Fix or remove it there.'
@@ -112,11 +124,8 @@ export function PublicAddressSettings({
   /** An address offered elsewhere on the page (the mobile device guide). A new `n` proposes again, even the same address. */
   proposed?: { url: string; n: number }
 }) {
-  const permissions = usePermissions()
-  const canRead = permissions.identity?.type === 'user' && permissions.can('settings:read')
-  const canWrite = canRead && permissions.can('settings:write')
+  const { canRead, canWrite, query } = usePublicAddressStatus()
   const client = useQueryClient()
-  const query = useQuery({ ...publicUrlQueries.status(), enabled: canRead })
   const [draft, setDraft] = useState<string | null>(null)
   const [pending, setPending] = useState<{ url: string | null; version: string; preview: PublicAppUrlPreview } | null>(
     null
